@@ -29,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 
 public class Server extends Thread {
 
+    private static final float UNLIMITED_DISTANCE = Float.MAX_VALUE;
+
     private final Map<UUID, ClientConnection> connections;
     private final Map<UUID, ClientConnection> unCheckedConnections;
     private final Map<UUID, UUID> secrets;
@@ -353,7 +355,6 @@ public class Server extends Thread {
 
     private void processProximityPacket(PlayerState senderState, ServerPlayer sender, MicPacket packet) throws Exception {
         @Nullable UUID groupId = senderState.getGroup();
-        float distance = Utils.getDefaultDistance();
 
         SoundPacket<?> soundPacket = null;
         String source = null;
@@ -374,21 +375,17 @@ public class Server extends Thread {
                 }
             }
             if (Voicechat.SERVER_CONFIG.spectatorInteraction.get()) {
-                soundPacket = new LocationSoundPacket(sender.getUUID(), sender.getEyePosition(), packet.getData(), packet.getSequenceNumber(), distance, null);
+                soundPacket = new LocationSoundPacket(sender.getUUID(), sender.getEyePosition(), packet.getData(), packet.getSequenceNumber(), UNLIMITED_DISTANCE, null);
                 source = SoundPacketEvent.SOURCE_SPECTATOR;
             }
         }
 
         if (soundPacket == null) {
-            float crouchMultiplayer = sender.isCrouching() ? Voicechat.SERVER_CONFIG.crouchDistanceMultiplier.get().floatValue() : 1F;
-            float whisperMultiplayer = packet.isWhispering() ? Voicechat.SERVER_CONFIG.whisperDistanceMultiplier.get().floatValue() : 1F;
-            float multiplier = crouchMultiplayer * whisperMultiplayer;
-            distance = distance * multiplier;
-            soundPacket = new PlayerSoundPacket(sender.getUUID(), packet.getData(), packet.getSequenceNumber(), packet.isWhispering(), distance, null);
+            soundPacket = new PlayerSoundPacket(sender.getUUID(), packet.getData(), packet.getSequenceNumber(), packet.isWhispering(), UNLIMITED_DISTANCE, null);
             source = SoundPacketEvent.SOURCE_PROXIMITY;
         }
 
-        broadcast(ServerWorldUtils.getPlayersInRange(sender.serverLevel(), sender.position(), getBroadcastRange(distance), p -> !p.getUUID().equals(sender.getUUID())), soundPacket, sender, senderState, groupId, source);
+        broadcast(sender.serverLevel().players(), soundPacket, sender, senderState, groupId, source);
     }
 
     public void sendSoundPacket(@Nullable ServerPlayer sender, @Nullable PlayerState senderState, ServerPlayer receiver, PlayerState receiverState, @Nullable ClientConnection connection, SoundPacket<?> soundPacket, String source) throws Exception {
@@ -416,15 +413,14 @@ public class Server extends Thread {
     }
 
     public double getBroadcastRange(float minRange) {
-        double broadcastRange = Voicechat.SERVER_CONFIG.broadcastRange.get();
-        if (broadcastRange < 0D) {
-            broadcastRange = Voicechat.SERVER_CONFIG.voiceChatDistance.get() + 1D;
-        }
-        return Math.max(broadcastRange, minRange);
+        return Double.MAX_VALUE;
     }
 
     public void broadcast(Collection<ServerPlayer> players, SoundPacket<?> packet, @Nullable ServerPlayer sender, @Nullable PlayerState senderState, @Nullable UUID groupId, String source) {
         for (ServerPlayer player : players) {
+            if (sender != null && player.getUUID().equals(sender.getUUID())) {
+                continue;
+            }
             PlayerState state = playerStateManager.getState(player.getUUID());
             if (state == null) {
                 continue;
